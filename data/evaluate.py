@@ -63,8 +63,9 @@ def rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational
     else:
         F_c = 2 * P_c * R_c / (P_c + R_c)
         
-    if len(relations) == 0 and len(pre_relation) == 0:
-        F_c = 1
+    # TODO the host of the event do not use this metric
+    # if len(relations) == 0 and len(pre_relation) == 0:
+    #     F_c = 1
     
     return (F_a + F_b + F_c)/3
 
