@@ -336,6 +336,8 @@ def train_classifier(cfg, sent_cls):
     model = sent_cls(cfg)
     tokenizer = AutoTokenizer.from_pretrained(cfg.pretrain_model_name_or_path)
 
+    model_name = cfg.pretrain_model_name_or_path.split("/")[-1]
+
     train_dl, val_dl = build_dataloader(cfg, tokenizer)
     model.set_dataloader(train_dl, val_dl)
 
@@ -344,19 +346,14 @@ def train_classifier(cfg, sent_cls):
 
     time_now = time.strftime("%Y-%m-%d-%H-%M", time.localtime())
     ckp_path = os.path.join(output_dir, time_now)
+    ckp_name = model_name + "-{step}-{valid_acc_epoch:.4f}"
 
     if not os.path.exists(ckp_path):
         os.makedirs(ckp_path)
 
     checkpoint = pl.callbacks.ModelCheckpoint(
         dirpath=ckp_path,
-        filename="{step}-{valid_acc_epoch:02f}",
-        every_n_train_steps=train_args.save_steps,
-    )
-
-    checkpoint = pl.callbacks.ModelCheckpoint(
-        dirpath=output_dir,
-        filename="{step}-{valid_acc_epoch:02f}",
+        filename=ckp_name,
         every_n_train_steps=train_args.save_steps,
     )
 
