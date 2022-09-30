@@ -11,6 +11,30 @@ doc_encoder:
 
 
 sentence_classifier:
-  pretrain_model_name_or_path: "cyclone/simcse-chinese-roberta-wwm-ext"
-  data_dir: ""
-  output_dir: "./tmp"
+  seed: 42
+  task: single
+  pretrain_model_name_or_path: cyclone/simcse-chinese-roberta-wwm-ext
+  data_dir: D:\NVIDIA\textpair\data
+  output_dir: ./single
+
+  train_args:
+    lr: 1e-5
+    gradient_clip_val: 0.5
+    devices: 1
+    weight_decay: 0.01
+    batch_size: 4
+    max_epochs: 4
+    accelerator: gpu
+    strategy: ddp
+    val_check_interval: 0.5
+
+
+
+
+sentence_pair_classifier:
+  task: paired
+  pretrain_model_name_or_path: cyclone/simcse-chinese-roberta-wwm-ext
+  data_dir: D:\NVIDIA\textpair\data
+  output_dir: ./paired
+
+  train_args:
