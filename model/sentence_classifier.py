@@ -4,6 +4,7 @@ import random
 import torch
 import hydra
 
+
 class DataReader(object):
     def __init__(self, data_path):
         self.data_path = data_path
@@ -92,19 +93,20 @@ class SingleDataset(torch.utils.data.Dataset):
         encoded['labels'] = torch.tensor(label)
         return encoded
 
-@hydra.main(config_path="config", config_name="config")
+
+@hydra.main(config_path="./", config_name="config")
 def main(cfg):
     cfg = cfg.sentence_classifier
-    
-    model_name_or_path = cfg.model_name_or_path
+
+    pretrain_model_name_or_path = cfg.pretrain_model_name_or_path
     data_dir = cfg.data_dir
     output_dir = cfg.output_dir
-    
-    model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, num_labels=2)
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+
+    model = AutoModelForSequenceClassification.from_pretrained(pretrain_model_name_or_path, num_labels=2)
+    tokenizer = AutoTokenizer.from_pretrained(pretrain_model_name_or_path)
 
     train_single_data = DataReader(f"{data_dir}/train.jsonl").single_data
-    test_single_data = DataReader(f"{data_dir}val.jsonl").single_data
+    test_single_data = DataReader(f"{data_dir}/val.jsonl").single_data
 
     train_single_dataset = SingleDataset(train_single_data, tokenizer)
     test_single_dataset = SingleDataset(test_single_data, tokenizer)
@@ -112,9 +114,9 @@ def main(cfg):
     training_args = TrainingArguments(
         output_dir=output_dir,
         learning_rate=2e-5,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        num_train_epochs=5,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=64,
+        num_train_epochs=2,
         weight_decay=0.01,
         remove_unused_columns=False,
     )
@@ -127,8 +129,9 @@ def main(cfg):
         tokenizer=tokenizer,
         data_collator=train_single_dataset.collate_fn,
     )
-    
+
     trainer.train()
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
