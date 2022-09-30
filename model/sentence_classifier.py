@@ -355,6 +355,7 @@ def train_classifier(cfg, sent_cls):
         dirpath=ckp_path,
         filename=ckp_name,
         every_n_train_steps=train_args.save_steps,
+        monitor="valid_acc_epoch",
     )
 
     logger = TensorBoardLogger(output_dir)
