@@ -62,7 +62,7 @@ class DataReader(object):
         data = self.data
         res = []
         for sample in data:
-            res.append(self._get_paired_samples(sample["Case_A"], sample["Case_B"], sample["relation"]))
+            res.extend(self._get_paired_samples(sample["Case_A"], sample["Case_B"], sample["relation"]))
         return res
 
     def _get_paired_samples(self, ca, cb, rel):
@@ -110,44 +110,11 @@ class SingleDataset(torch.utils.data.Dataset):
         return {"input": encoded, "label": torch.tensor(label)}
 
 
-class PairedDataset(torch.utils.data.Dataset):
-    def __init__(self, data, tokenizer):
-        self.data = data
-        self.tokenizer = tokenizer
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-
-    def set_tokenizer(self, tokenizer):
-        self.tokenizer = tokenizer
-
-    def encode_batch(self, sents):
-        encoded = self.tokenizer(sents, padding="longest", truncation=True, return_tensors='pt', max_length=512)
-        return encoded
-
-    def collate_fn(self, batch):
-        sep_token = self.tokenizer.sep_token
-        a = []
-        b = []
-        ab = []
-        ba = []
-        label = []
-        for sample in batch:
-            ab.append(sample['texta'] + sep_token + sample['textb'])
-            ba.append(sample['textb'] + sep_token + sample['texta'])
-            label.append(sample["label"])
-        ab = self.encode_batch(ab)
-        ba = self.encode_batch(ba)
-        return {"input_ab": ab, "input_ba": ba, "labels": torch.tensor(label)}
-
-
 class SentenceClassifier(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
         self.hparams.update(cfg.train_args)
+        self.save_hyperparameters()
         self.bert = AutoModel.from_pretrained(cfg.pretrain_model_name_or_path)
         self.classifer = torch.nn.Sequential(nn.Dropout(0.2),
                                              nn.Linear(self.bert.config.hidden_size,
@@ -170,9 +137,14 @@ class SentenceClassifier(pl.LightningModule):
         _, logits = self(**input)
         label = batch.get("label")
         loss = F.cross_entropy(logits, label)
+        self.log("train_loss", loss, on_step=True, prog_bar=True)
+        self.train_acc.update(logits, label)
         return loss
 
     def training_epoch_end(self, outputs):
+        self.log('train_acc_epoch',
+            self.train_acc.compute(),
+            sync_dist=True)
         self.train_acc.reset()
 
     def validation_step(self, batch, batch_idx):
@@ -182,7 +154,9 @@ class SentenceClassifier(pl.LightningModule):
         self.valid_acc.update(logits, label)
 
     def validation_epoch_end(self, outputs):
-        self.log('valid_acc_epoch', self.valid_acc.compute())
+        self.log('valid_acc_epoch',
+                 self.valid_acc.compute(),
+                 sync_dist=True)
         self.valid_acc.reset()
 
     def configure_optimizers(self):
@@ -207,8 +181,119 @@ class SentenceClassifier(pl.LightningModule):
         self.val_data = val_dataloader
 
 
+class PairedDataset(torch.utils.data.Dataset):
+    def __init__(self, data, tokenizer):
+        self.data = data
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def set_tokenizer(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def encode_batch(self, sents):
+        encoded = self.tokenizer(sents, padding="longest", truncation=True, return_tensors='pt', max_length=512)
+        return encoded
+
+    def collate_fn(self, batch):
+        sep_token = self.tokenizer.sep_token
+        ab = []
+        ba = []
+        label = []
+        for sample in batch:
+            ab.append(sample['texta'] + sep_token + sample['textb'])
+            ba.append(sample['textb'] + sep_token + sample['texta'])
+            label.append(sample["label"])
+        ab = self.encode_batch(ab)
+        ba = self.encode_batch(ba)
+        return {"input_ab": ab, "input_ba": ba, "label": torch.tensor(label)}
+
+
 class SentencePairClassifier(pl.LightningModule):
-    pass
+    def __init__(self, cfg):
+        super().__init__()
+        self.hparams.update(cfg.train_args)
+        self.save_hyperparameters()
+        self.bert = AutoModel.from_pretrained(cfg.pretrain_model_name_or_path)
+        self.classifer = torch.nn.Sequential(nn.Dropout(0.2),
+                                             nn.Linear(self.bert.config.hidden_size * 2,
+                                                       int(self.bert.config.hidden_size / 2)),
+                                             nn.GELU(),
+                                             nn.Linear(int(self.bert.config.hidden_size / 2), 2))
+
+        self.train_acc = torchmetrics.Accuracy()
+        self.valid_acc = torchmetrics.Accuracy()
+
+    def forward(self, input_ab, input_ba):
+        out1 = self.bert(**input_ab).last_hidden_state.transpose(1, 2)
+        out2 = self.bert(**input_ba).last_hidden_state.transpose(1, 2)
+        # print(out1.shape, out2.shape)
+        
+        emb1 = torch.avg_pool1d(out1, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
+        emb2 = torch.avg_pool1d(out2, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
+        # print(emb1.shape, emb2.shape)
+
+        emb = torch.cat([emb1, emb2], dim=-1)
+        logits = self.classifer(emb)
+        return emb, logits
+
+    
+    def training_step(self, batch, batch_idx):
+        input_ab = batch.get("input_ab")
+        input_ba = batch.get("input_ba")
+        _, logits = self(input_ab, input_ba)
+        label = batch.get("label")
+        loss = F.cross_entropy(logits, label)
+        self.log("train_loss", loss, on_step=True)
+        self.train_acc.update(logits, label)
+        return loss
+
+
+    def validation_step(self, batch, batch_idx):
+        input_ab = batch.get("input_ab")
+        input_ba = batch.get("input_ba")
+        _, logits = self(input_ab, input_ba)
+        label = batch.get("label")
+        self.valid_acc.update(logits, label)
+
+    def training_epoch_end(self, outputs):
+        self.log('train_acc_epoch',
+            self.train_acc.compute(),
+            sync_dist=True)
+        self.train_acc.reset()
+
+    def validation_epoch_end(self, outputs):
+        self.log('valid_acc_epoch',
+                 self.valid_acc.compute(),
+                 sync_dist=True)
+        self.valid_acc.reset()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(),
+                                     lr=self.hparams.lr,
+                                     weight_decay=self.hparams.weight_decay)
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.hparams.max_epochs,
+            eta_min=self.hparams.lr / 50
+        )
+        return [optimizer], [lr_scheduler]
+
+    def train_dataloader(self):
+        return self.train_data
+
+    def val_dataloader(self):
+        return self.val_data
+
+    def set_dataloader(self, train_dataloader, val_dataloader):
+        self.train_data = train_dataloader
+        self.val_data = val_dataloader
+
+
 
 
 def build_dataloader(cfg, tokenizer=None):
@@ -249,10 +334,10 @@ def build_dataloader(cfg, tokenizer=None):
     return train_dataloader, val_dataset
 
 
-def train_sentence_classifier(cfg):
+def train_classifier(cfg, sent_cls):
     pl.seed_everything(cfg.seed)
 
-    model = SentenceClassifier(cfg)
+    model = sent_cls(cfg)
     tokenizer = AutoTokenizer.from_pretrained(cfg.pretrain_model_name_or_path)
 
     train_dl, val_dl = build_dataloader(cfg, tokenizer)
@@ -261,29 +346,23 @@ def train_sentence_classifier(cfg):
     train_args = cfg.train_args
     output_dir = cfg.output_dir
 
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     checkpoint = pl.callbacks.ModelCheckpoint(
         dirpath=output_dir,
-        filename="{valid_acc_epoch_:02d}",
-        save_weights_only=True,
-        save_on_train_epoch_end=True,
+        filename="{step}-{valid_acc_epoch:02f}",
+        every_n_train_steps=train_args.save_steps,
     )
 
-    logger = TensorBoardLogger(f"{output_dir}/logs")
+    logger = TensorBoardLogger(output_dir)
 
-    print(train_args)
-    
-    
     trainer = pl.Trainer(
         accelerator=train_args.accelerator,
         max_epochs=train_args.max_epochs,
         devices=train_args.devices,
-        gradient_clip_val = train_args.gradient_clip_val,
-        strategy = train_args.strategy,
-        val_check_interval = train_args.val_check_interval,
-        
-        callbacks=[
-            checkpoint,
-        ],
+        gradient_clip_val=train_args.gradient_clip_val,
+        callbacks=[checkpoint],
         logger=logger
     )
 
@@ -292,7 +371,10 @@ def train_sentence_classifier(cfg):
 
 @hydra.main(config_path="./", config_name="config", version_base="1.2")
 def main(cfg):
-    train_sentence_classifier(cfg.sentence_classifier)
+    if cfg.task == "single":
+        train_classifier(cfg.sentence_classifier, SentenceClassifier)
+    elif cfg.task == "paired":
+        train_classifier(cfg.sentence_pair_classifier, SentencePairClassifier)
 
 
 if __name__ == "__main__":
