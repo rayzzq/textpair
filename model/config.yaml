@@ -1,0 +1,16 @@
+doc_encoder:
+  hidden_size: 768
+  num_heads: 4
+  dropout: 0.3
+  activation: gelu
+  num_layers: 4
+
+  sent_encoder:
+    pretrain_model_name_or_path: "cyclone/simcse-chinese-roberta-wwm-ext"
+    pooling_type: "last-avg"
+
+
+sentence_classifier:
+  pretrain_model_name_or_path: "cyclone/simcse-chinese-roberta-wwm-ext"
+  data_dir: ""
+  output_dir: "./tmp"
