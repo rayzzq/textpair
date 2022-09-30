@@ -143,8 +143,8 @@ class SentenceClassifier(pl.LightningModule):
 
     def training_epoch_end(self, outputs):
         self.log('train_acc_epoch',
-            self.train_acc.compute(),
-            sync_dist=True)
+                 self.train_acc.compute(),
+                 sync_dist=True)
         self.train_acc.reset()
 
     def validation_step(self, batch, batch_idx):
@@ -232,7 +232,7 @@ class SentencePairClassifier(pl.LightningModule):
         out1 = self.bert(**input_ab).last_hidden_state.transpose(1, 2)
         out2 = self.bert(**input_ba).last_hidden_state.transpose(1, 2)
         # print(out1.shape, out2.shape)
-        
+
         emb1 = torch.avg_pool1d(out1, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
         emb2 = torch.avg_pool1d(out2, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
         # print(emb1.shape, emb2.shape)
@@ -241,7 +241,6 @@ class SentencePairClassifier(pl.LightningModule):
         logits = self.classifer(emb)
         return emb, logits
 
-    
     def training_step(self, batch, batch_idx):
         input_ab = batch.get("input_ab")
         input_ba = batch.get("input_ba")
@@ -252,7 +251,6 @@ class SentencePairClassifier(pl.LightningModule):
         self.train_acc.update(logits, label)
         return loss
 
-
     def validation_step(self, batch, batch_idx):
         input_ab = batch.get("input_ab")
         input_ba = batch.get("input_ba")
@@ -262,8 +260,8 @@ class SentencePairClassifier(pl.LightningModule):
 
     def training_epoch_end(self, outputs):
         self.log('train_acc_epoch',
-            self.train_acc.compute(),
-            sync_dist=True)
+                 self.train_acc.compute(),
+                 sync_dist=True)
         self.train_acc.reset()
 
     def validation_epoch_end(self, outputs):
@@ -292,8 +290,6 @@ class SentencePairClassifier(pl.LightningModule):
     def set_dataloader(self, train_dataloader, val_dataloader):
         self.train_data = train_dataloader
         self.val_data = val_dataloader
-
-
 
 
 def build_dataloader(cfg, tokenizer=None):
@@ -346,8 +342,17 @@ def train_classifier(cfg, sent_cls):
     train_args = cfg.train_args
     output_dir = cfg.output_dir
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    time_now = time.strftime("%Y-%m-%d-%H-%M", time.localtime())
+    ckp_path = os.path.join(output_dir, time_now)
+
+    if not os.path.exists(ckp_path):
+        os.makedirs(ckp_path)
+
+    checkpoint = pl.callbacks.ModelCheckpoint(
+        dirpath=ckp_path,
+        filename="{step}-{valid_acc_epoch:02f}",
+        every_n_train_steps=train_args.save_steps,
+    )
 
     checkpoint = pl.callbacks.ModelCheckpoint(
         dirpath=output_dir,
