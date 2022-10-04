@@ -8,7 +8,7 @@ from transformers import AutoModel, AutoTokenizer
 
 import torch
 from torch import nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 import torch.nn.functional as F
 from torch import optim
 
@@ -379,13 +379,13 @@ def build_dataloader(cfg, tokenizer=None):
 
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=train_args.batch_size,
-                                  shuffle=True,
+                                  sampler=RandomSampler(train_dataset),
                                   num_workers=4,
                                   collate_fn=train_dataset.collate_fn)
 
     val_dataset = DataLoader(val_dataset,
                              batch_size=train_args.batch_size,
-                             shuffle=False,
+                             sampler=SequentialSampler(val_dataset),
                              num_workers=4,
                              collate_fn=val_dataset.collate_fn)
 
@@ -416,7 +416,6 @@ def train_classifier(cfg, sent_cls):
     checkpoint = pl.callbacks.ModelCheckpoint(
         dirpath=ckp_path,
         filename=ckp_name,
-        every_n_train_steps=train_args.save_steps,
         monitor="valid_acc_epoch",
     )
 
