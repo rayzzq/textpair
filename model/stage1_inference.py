@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 def sample_to_tensor(sample, single_model, paired_model):
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
     single_model.to(device)
     paired_model.to(device)
 
