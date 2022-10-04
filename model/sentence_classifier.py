@@ -126,8 +126,9 @@ class SentenceClassifier(pl.LightningModule):
         self.train_acc = torchmetrics.Accuracy()
         self.valid_acc = torchmetrics.Accuracy()
 
+    @torch.no_grad()
     def encode(self, texts, device="cuda:0"):
-
+        self.eval()
         self.to(device)
 
         if isinstance(texts, str):
@@ -144,9 +145,10 @@ class SentenceClassifier(pl.LightningModule):
 
         encoded_sents = batch_tokenize(texts)
         for k in encoded_sents:
-            encoded_sents[k].to(device)
+            encoded_sents[k] = encoded_sents[k].to(device)
 
         emb, logits = self(**encoded_sents)
+
         return emb, logits
 
     def forward(self, *args, **kwargs):
@@ -266,8 +268,9 @@ class SentencePairClassifier(pl.LightningModule):
         logits = self.classifier(emb)
         return emb, logits
 
+    @torch.no_grad()
     def encode(self, paired_text, device='cuda:0'):
-
+        self.eval()
         self.to(device)
 
         assert isinstance(paired_text, list)
@@ -291,13 +294,12 @@ class SentencePairClassifier(pl.LightningModule):
             ba.append(tb + sep_token + ta)
 
         encoded_ab = batch_tokenize(ab)
-
         for k in encoded_ab:
-            encoded_ab[k].to(device)
-        encoded_ba = batch_tokenize(ba)
+            encoded_ab[k] = encoded_ab[k].to(device)
 
+        encoded_ba = batch_tokenize(ba)
         for k in encoded_ba:
-            encoded_ba.to(device)
+            encoded_ba[k] = encoded_ba[k].to(device)
 
         emb, logits = self(encoded_ab, encoded_ba)
 
@@ -414,6 +416,7 @@ def train_classifier(cfg, sent_cls):
         os.makedirs(ckp_path)
 
     checkpoint = pl.callbacks.ModelCheckpoint(
+        mode = "max",
         dirpath=ckp_path,
         filename=ckp_name,
         monitor="valid_acc_epoch",
