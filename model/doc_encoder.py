@@ -1,12 +1,20 @@
+import time
+import os
 
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+from torch import optim
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 
 import pickle
 import hydra
 
 from transformers import AutoModel, AutoTokenizer
+
+import pytorch_lightning as pl
+import torchmetrics
+from pytorch_lightning.loggers import TensorBoardLogger
 
 
 class ScaleAttention(nn.Module):
@@ -18,18 +26,22 @@ class ScaleAttention(nn.Module):
     def forward(self, q, k, v, mask):
         # b, seq, n, dv
         atten = torch.matmul(q / self.temp, k.transpose(-1, -2))
-        if mask is not None:
-            atten.masked_fill(mask, 1e-9)
 
-        print("-"*10 + "debug" + "-"*10)
-        print(q.shape)
-        print(atten.shape)
-        print(mask.shape)
-        print("-"*10 + "debug" + "-"*10)
+        # TODO: is this correct to use mask label
+        if mask is not None:
+            atten = atten * mask
+            atten.masked_fill_(mask.bool(), 1e-9)
+
+        # print("-"*10 + "debug" + "-"*10)
+        # print(q.shape)
+        # print(atten.shape)
+        # print(mask.shape)
+        # print("-"*10 + "debug" + "-"*10)
 
         atten = F.softmax(atten, dim=-1)
         atten = self.dropout(atten)
         out = torch.matmul(atten, v)
+
         return out, atten
 
 
@@ -73,7 +85,8 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2).contiguous().view(-1, len_v, d_v)
 
         if mask is not None:
-            mask = mask.view(sz_b, 1, len_q, 1)
+            mask = mask.repeat(n_head, 1, 1).view(-1, len_q, 1)
+
         output, attention = self.attention(q, k, v, mask=mask)
 
         output = output.view(sz_b, n_head, len_q, d_v)
@@ -175,29 +188,159 @@ class DocEncoder(nn.Module):
         return doc_seqs, doc_socres
 
 
-def load_data(file_path):
-    with open(file_path, 'rb') as f:
-        data = pickle.load(f)
+class DocModel(pl.LightningModule):
+    def __init__(self, cfg):
+        super().__init__()
 
-    emb_ab = []
-    rel_ab = []
-    for sample in data[0:5]:
-        emb_ab.append(torch.tensor(sample['emb_ab']))
-        rel_ab.append(torch.tensor(sample['rel_ab']))
+        self.cfg = cfg
+        self.hparams.update(cfg.train_args)
+        self.save_hyperparameters()
+        self.model = DocEncoder(cfg)
+        self.train_acc = torchmetrics.Accuracy()
+        self.valid_acc = torchmetrics.Accuracy()
 
-    return emb_ab, rel_ab
+    def forward(self, x):
+        doc_seqs, logits = self.model(x)
+        return doc_seqs, logits
+
+    def training_step(self, batch, batch_idx):
+        input = batch.get("input")
+        label = batch.get("label")
+        doc_seqs, logits = self.model(*input)
+        loss = F.cross_entropy(logits, label)
+        self.log("train_loss", loss, on_step=True)
+        self.train_acc.update(logits, label)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        input = batch.get("input")
+        label = batch.get("label")
+        doc_seqs, logits = self.model(*input)
+        self.valid_acc.update(logits, label)
+
+    def training_epoch_end(self, outputs):
+        self.log('train_acc_epoch',
+                 self.train_acc.compute(),
+                 sync_dist=True)
+        self.train_acc.reset()
+
+    def validation_epoch_end(self, outputs):
+        self.log('valid_acc_epoch',
+                 self.valid_acc.compute(),
+                 sync_dist=True)
+        self.valid_acc.reset()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(),
+                                     lr=self.hparams.lr,
+                                     weight_decay=self.hparams.weight_decay)
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.hparams.max_epochs,
+            eta_min=self.hparams.lr / 50
+        )
+        return [optimizer], [lr_scheduler]
+
+    def train_dataloader(self):
+        return self.train_data
+
+    def val_dataloader(self):
+        return self.valid_data
+
+    def load_dataloader(self, cfg):
+        collate_fn = self.collate_fn
+
+        train_data = pickle.load(open(cfg.train_data_path, "rb"))
+        valid_data = pickle.load(open(cfg.valid_data_path, "rb"))
+
+        train_dl = DataLoader(train_data,
+                              batch_size=cfg.train_args.batch_size,
+                              sampler=RandomSampler(train_data),
+                              collate_fn=collate_fn,
+                              num_workers=4)
+
+        val_dl = DataLoader(valid_data,
+                            batch_size=cfg.train_args.batch_size,
+                            shuffle=False,
+                            collate_fn=collate_fn,
+                            num_workers=4)
+
+        self.train_data = train_dl
+        self.valid_data = val_dl
+
+    @staticmethod
+    def collate_fn(batch):
+        label = []
+        emb_ab = []
+        logits_ab = []
+        for sample in batch:
+            emb_ab.append(torch.tensor(sample.get("emb_ab")))
+            logits_ab.append(torch.tensor(sample.get("logits_ab"))[:, 1])
+            label.append(sample.get("label"))
+
+        return {"input": (emb_ab, logits_ab), "label": torch.tensor(label)}
 
 
-@hydra.main(config_path='./', config_name='config', version_base=None)
-def test_forward(cfg):
+@hydra.main(config_path="./", config_name="config", version_base="1.1")
+def train_doc_encoder(cfg):
     cfg = cfg.doc_encoder
-    model = DocEncoder(cfg)
-    emb_ab, rel_ab = load_data(cfg.data_path)
-    doc_seqs, logits = model(emb_ab, rel_ab)
 
-    print(doc_seqs.shape)
-    print(logits.shape)
+    pl.seed_everything(cfg.seed)
+    model = DocModel(cfg)
+    model.load_dataloader(cfg)
+
+    train_args = cfg.train_args
+    output_dir = cfg.output_dir
+
+    time_now = time.strftime("%Y-%m-%d-%H-%M", time.localtime())
+    ckp_path = os.path.join(output_dir, time_now)
+    ckp_name = "doc-{step}-{valid_acc_epoch:.4f}"
+
+    if not os.path.exists(ckp_path):
+        os.makedirs(ckp_path)
+
+    checkpoint = pl.callbacks.ModelCheckpoint(
+        mode="max",
+        dirpath=ckp_path,
+        filename=ckp_name,
+        monitor="valid_acc_epoch",
+    )
+
+    logger = TensorBoardLogger(output_dir)
+
+    trainer = pl.Trainer(
+        accelerator=train_args.accelerator,
+        max_epochs=train_args.max_epochs,
+        devices=train_args.devices,
+        gradient_clip_val=train_args.gradient_clip_val,
+        callbacks=[checkpoint],
+        logger=logger
+    )
+
+    trainer.fit(model)
 
 
+# def load_data(file_path):
+#     with open(file_path, 'rb') as f:
+#         data = pickle.load(f)
+#     emb_ab = []
+#     rel_ab = []
+#     for sample in data[0:5]:
+#         emb_ab.append(torch.tensor(sample['emb_ab']))
+#         # rel_ab.append(torch.tensor(sample['rel_ab']))
+#         soft_rel = torch.tensor(sample['logits_ab'])[:,1]
+#         rel_ab.append(soft_rel)
+
+#     return emb_ab, rel_ab
+
+
+# @hydra.main(config_path='./', config_name='config', version_base=None)
+# def test_forward(cfg):
+#     cfg = cfg.doc_encoder
+#     model = DocEncoder(cfg)
+#     emb_ab, rel_ab = load_data(cfg.data_path)
+#     doc_seqs, logits = model(emb_ab, rel_ab)
+#     print(doc_seqs.shape)
+#     print(logits.shape)
 if __name__ == "__main__":
-    test_forward()
+    train_doc_encoder()

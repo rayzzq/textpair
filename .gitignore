@@ -4,3 +4,4 @@ tmp
 *outputs
 .idea
 *__pycache__*
+*.pkl
