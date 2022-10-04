@@ -4,10 +4,10 @@ doc_encoder:
   dropout: 0.3
   activation: gelu
   num_layers: 4
+  num_classes: 3
+  data_path: D:\NVIDIA\textpair\data\val_stage1.pkl
 
-  sent_encoder:
-    pretrain_model_name_or_path: cyclone/simcse-chinese-roberta-wwm-ext
-    pooling_type: "last-avg"
+
 
 task: single
 
