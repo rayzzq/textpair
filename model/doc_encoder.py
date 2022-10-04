@@ -10,8 +10,6 @@ from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampl
 import pickle
 import hydra
 
-from transformers import AutoModel, AutoTokenizer
-
 import pytorch_lightning as pl
 import torchmetrics
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -158,30 +156,34 @@ class DocEncoder(nn.Module):
         return doc_seqs, logits
 
     def _pad_cls_seqs(self, tensor, max_seq_len):
+        device = self.doc_cls_embedding.device
         cls_emb = self.doc_cls_embedding.unsqueeze(0)
         pad_emb = self.doc_pad_embedding.unsqueeze(0)
         padded_seq = [cls_emb]
-        padded_seq.append(tensor)
+        padded_seq.append(tensor.to(device))
         padded_seq.extend([pad_emb] * (max_seq_len - tensor.shape[0]))
         padded_seq = torch.cat(padded_seq, dim=0)
         return padded_seq
 
     def _pad_cls_socres(self, doc_score, max_seq_len):
-        scores = [torch.ones(1)]
-        scores.append(doc_score)
-        scores.append(torch.zeros(max_seq_len - doc_score.shape[0]))
+        device = self.doc_cls_embedding.device
+        scores = [torch.ones(1).to(device)]
+        scores.append(doc_score.to(device))
+        scores.append(torch.zeros(max_seq_len - doc_score.shape[0]).to(device))
         padded_scores = torch.cat(scores, dim=0)
         return padded_scores
 
     def _pad_to_longest(self, doc_seqs, doc_scores):
+        
         doc_lens = [len(seq) for seq in doc_seqs]
         max_seq_len = max(doc_lens)
+        
         for i in range(len(doc_seqs)):
             padded_seq = self._pad_cls_seqs(doc_seqs[i], max_seq_len)
             padded_socres = self._pad_cls_socres(doc_scores[i], max_seq_len)
             doc_scores[i] = padded_socres.unsqueeze(0)
             doc_seqs[i] = padded_seq.unsqueeze(0)
-
+            
         doc_seqs = torch.vstack(doc_seqs)
         doc_socres = torch.vstack(doc_scores)
 
