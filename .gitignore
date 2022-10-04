@@ -2,3 +2,5 @@
 tmp
 .ipynb_checkpoints
 *outputs
+.idea
+*__pycache__*

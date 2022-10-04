@@ -12,7 +12,6 @@ from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 from torch import optim
 
-
 import pytorch_lightning as pl
 import torchmetrics
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -45,6 +44,7 @@ class DataReader(object):
                     pos_sents.append(sents[i])
                 else:
                     neg_sents.append(sents[i])
+
         for sample in data:
             select_pos_sent(sample["Case_A"], sample["Case_A_rationales"])
             select_pos_sent(sample["Case_B"], sample["Case_B_rationales"])
@@ -74,8 +74,8 @@ class DataReader(object):
 
         neg = []
         while len(neg) < int(1.5 * len(pos)):
-            ia = random.randint(0, len(ca)-1)
-            ib = random.randint(0, len(cb)-1)
+            ia = random.randint(0, len(ca) - 1)
+            ib = random.randint(0, len(cb) - 1)
             if (ia, ib) not in rel:
                 neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
         return pos + neg
@@ -116,21 +116,45 @@ class SentenceClassifier(pl.LightningModule):
         self.hparams.update(cfg.train_args)
         self.save_hyperparameters()
         self.bert = AutoModel.from_pretrained(cfg.pretrain_model_name_or_path)
-        self.classifer = torch.nn.Sequential(nn.Dropout(0.2),
-                                             nn.Linear(self.bert.config.hidden_size,
-                                                       int(self.bert.config.hidden_size / 2)),
-                                             nn.GELU(),
-                                             nn.Linear(int(self.bert.config.hidden_size / 2), 2))
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg.pretrain_model_name_or_path)
+        self.classifier = torch.nn.Sequential(nn.Dropout(0.2),
+                                              nn.Linear(self.bert.config.hidden_size,
+                                                        int(self.bert.config.hidden_size / 2)),
+                                              nn.GELU(),
+                                              nn.Linear(int(self.bert.config.hidden_size / 2), 2))
 
         self.train_acc = torchmetrics.Accuracy()
         self.valid_acc = torchmetrics.Accuracy()
 
+    def encode(self, texts, device="cuda:0"):
+
+        self.to(device)
+
+        if isinstance(texts, str):
+            texts = [texts]
+        assert isinstance(texts, list), "sinlge_model input must be batch of raw texts"
+
+        def batch_tokenize(sents):
+            encoded = self.tokenizer(sents,
+                                     padding="longest",
+                                     truncation=True,
+                                     return_tensors='pt',
+                                     max_length=512)
+            return encoded
+
+        encoded_sents = batch_tokenize(texts)
+        for k in encoded_sents:
+            encoded_sents[k].to(device)
+
+        emb, logits = self(**encoded_sents)
+        return emb, logits
+
     def forward(self, *args, **kwargs):
         ouput = self.bert(**kwargs)
-        last = ouput.last_hidden_state.transpose(1, 2)    # [batch, 768, seqlen]
-        sent_emb = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)   # [batch, 768]
-        logits = self.classifer(sent_emb)
-        return sent_emb, logits
+        last = ouput.last_hidden_state.transpose(1, 2)  # [batch, 768, seqlen]
+        emb = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
+        logits = self.classifier(emb)
+        return emb, logits
 
     def training_step(self, batch, batch_idx):
         input = batch.get("input")
@@ -219,11 +243,12 @@ class SentencePairClassifier(pl.LightningModule):
         self.hparams.update(cfg.train_args)
         self.save_hyperparameters()
         self.bert = AutoModel.from_pretrained(cfg.pretrain_model_name_or_path)
-        self.classifer = torch.nn.Sequential(nn.Dropout(0.2),
-                                             nn.Linear(self.bert.config.hidden_size * 2,
-                                                       int(self.bert.config.hidden_size / 2)),
-                                             nn.GELU(),
-                                             nn.Linear(int(self.bert.config.hidden_size / 2), 2))
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg.pretrain_model_name_or_path)
+        self.classifier = torch.nn.Sequential(nn.Dropout(0.2),
+                                              nn.Linear(self.bert.config.hidden_size * 2,
+                                                        int(self.bert.config.hidden_size / 2)),
+                                              nn.GELU(),
+                                              nn.Linear(int(self.bert.config.hidden_size / 2), 2))
 
         self.train_acc = torchmetrics.Accuracy()
         self.valid_acc = torchmetrics.Accuracy()
@@ -233,12 +258,49 @@ class SentencePairClassifier(pl.LightningModule):
         out2 = self.bert(**input_ba).last_hidden_state.transpose(1, 2)
         # print(out1.shape, out2.shape)
 
-        emb1 = torch.avg_pool1d(out1, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
-        emb2 = torch.avg_pool1d(out2, kernel_size=out1.shape[-1]).squeeze(-1)   # [batch, 768]
+        emb1 = torch.avg_pool1d(out1, kernel_size=out1.shape[-1]).squeeze(-1)  # [batch, 768]
+        emb2 = torch.avg_pool1d(out2, kernel_size=out1.shape[-1]).squeeze(-1)  # [batch, 768]
         # print(emb1.shape, emb2.shape)
 
         emb = torch.cat([emb1, emb2], dim=-1)
-        logits = self.classifer(emb)
+        logits = self.classifier(emb)
+        return emb, logits
+
+    def encode(self, paired_text, device='cuda:0'):
+
+        self.to(device)
+
+        assert isinstance(paired_text, list)
+        assert isinstance(paired_text[0], list)
+        assert isinstance(paired_text[0][0], str)
+
+        sep_token = self.tokenizer.sep_token
+
+        def batch_tokenize(sents):
+            encoded = self.tokenizer(sents,
+                                     padding="longest",
+                                     truncation=True,
+                                     return_tensors='pt',
+                                     max_length=512)
+            return encoded
+
+        ab = []
+        ba = []
+        for ta, tb in paired_text:
+            ab.append(ta + sep_token + tb)
+            ba.append(tb + sep_token + ta)
+
+        encoded_ab = batch_tokenize(ab)
+
+        for k in encoded_ab:
+            encoded_ab[k].to(device)
+        encoded_ba = batch_tokenize(ba)
+
+        for k in encoded_ba:
+            encoded_ba.to(device)
+
+        emb, logits = self(encoded_ab, encoded_ba)
+
         return emb, logits
 
     def training_step(self, batch, batch_idx):
