@@ -127,7 +127,7 @@ class SentenceClassifier(pl.LightningModule):
         self.valid_acc = torchmetrics.Accuracy()
 
     @torch.no_grad()
-    def encode(self, texts, device="cuda:0", inference_batch_size=32):
+    def encode(self, texts, device="cuda:0", batch_size=32):
         self.eval()
         self.to(device)
 
@@ -142,8 +142,8 @@ class SentenceClassifier(pl.LightningModule):
                                      max_length=512)
             return encoded
 
-        for i in range(0, len(texts), inference_batch_size):
-            batch = texts[i:i + inference_batch_size]
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
             encoded = batch_tokenize(batch)
             encoded = {k: v.to(device) for k, v in encoded.items()}
             emb, logits = self.bert(**encoded)
@@ -274,7 +274,7 @@ class SentencePairClassifier(pl.LightningModule):
         return emb, logits
 
     @torch.no_grad()
-    def encode(self, paired_text, device='cuda:0', infer_batch_size=64):
+    def encode(self, paired_text, device='cuda:0', batch_size=64):
         self.eval()
         self.to(device)
 
@@ -298,9 +298,9 @@ class SentencePairClassifier(pl.LightningModule):
             ab.append(ta + sep_token + tb)
             ba.append(tb + sep_token + ta)
 
-        for i in range(0, len(ab), infer_batch_size):
-            ab_batch = ab[i:i + infer_batch_size]
-            ba_batch = ba[i:i + infer_batch_size]
+        for i in range(0, len(ab), batch_size):
+            ab_batch = ab[i:i + batch_size]
+            ba_batch = ba[i:i + batch_size]
             ab_batch = batch_tokenize(ab_batch)
             ba_batch = batch_tokenize(ba_batch)
             ab_batch = {k: v.to(device) for k, v in ab_batch.items()}

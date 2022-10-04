@@ -26,8 +26,8 @@ def sample_to_tensor(sample, single_model, paired_model):
     for j in range(len(b)):
         rb.append(int(j in rationb))
 
-    a_embedding, a_logits = single_model.encode(a, device=device)
-    b_embedding, b_logits = single_model.encode(b, device=device)
+    a_embedding, a_logits = single_model.encode(a, device=device, batch_size=128)
+    b_embedding, b_logits = single_model.encode(b, device=device, batch_size=128)
 
     a_embedding = a_embedding.cpu().detach().numpy()
     b_embedding = b_embedding.cpu().detach().numpy()
@@ -42,7 +42,7 @@ def sample_to_tensor(sample, single_model, paired_model):
             paired_sents.append([senta, sentb])
             rel_trues.append(int((ia, ib) in rel))
 
-    paired_embedding, paired_logits = paired_model.encode(paired_sents, device=device)
+    paired_embedding, paired_logits = paired_model.encode(paired_sents, device=device, batch_size=64)
     paired_embedding = paired_embedding.cpu().detach().numpy()
     paired_logits = paired_logits.cpu().detach().numpy()
 
