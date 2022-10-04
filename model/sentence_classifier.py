@@ -127,14 +127,13 @@ class SentenceClassifier(pl.LightningModule):
         self.valid_acc = torchmetrics.Accuracy()
 
     @torch.no_grad()
-    def encode(self, texts, device="cuda:0"):
+    def encode(self, texts, device="cuda:0", inference_batch_size=32):
         self.eval()
         self.to(device)
 
-        if isinstance(texts, str):
-            texts = [texts]
         assert isinstance(texts, list), "sinlge_model input must be batch of raw texts"
-
+        assert isinstance(texts[0], str), "sinlge_model input must be batch of raw texts"
+        
         def batch_tokenize(sents):
             encoded = self.tokenizer(sents,
                                      padding="longest",
@@ -143,13 +142,19 @@ class SentenceClassifier(pl.LightningModule):
                                      max_length=512)
             return encoded
 
-        encoded_sents = batch_tokenize(texts)
-        for k in encoded_sents:
-            encoded_sents[k] = encoded_sents[k].to(device)
+        for i in range(0, len(texts), inference_batch_size):
+            batch = texts[i:i + inference_batch_size]
+            encoded = batch_tokenize(batch)
+            encoded = {k: v.to(device) for k, v in encoded.items()}
+            emb, logits = self.bert(**encoded)
+            if i == 0:
+                all_emb = emb
+                all_logits = logits
+            else:
+                all_emb = torch.cat([all_emb, emb], dim=0)
+                all_logits = torch.cat([all_logits, logits], dim=0)
 
-        emb, logits = self(**encoded_sents)
-
-        return emb, logits
+        return all_emb, all_logits
 
     def forward(self, *args, **kwargs):
         ouput = self.bert(**kwargs)
@@ -269,7 +274,7 @@ class SentencePairClassifier(pl.LightningModule):
         return emb, logits
 
     @torch.no_grad()
-    def encode(self, paired_text, device='cuda:0'):
+    def encode(self, paired_text, device='cuda:0', infer_batch_size=64):
         self.eval()
         self.to(device)
 
@@ -293,17 +298,22 @@ class SentencePairClassifier(pl.LightningModule):
             ab.append(ta + sep_token + tb)
             ba.append(tb + sep_token + ta)
 
-        encoded_ab = batch_tokenize(ab)
-        for k in encoded_ab:
-            encoded_ab[k] = encoded_ab[k].to(device)
+        for i in range(0, len(ab), infer_batch_size):
+            ab_batch = ab[i:i + infer_batch_size]
+            ba_batch = ba[i:i + infer_batch_size]
+            ab_batch = batch_tokenize(ab_batch)
+            ba_batch = batch_tokenize(ba_batch)
+            ab_batch = {k: v.to(device) for k, v in ab_batch.items()}
+            ba_batch = {k: v.to(device) for k, v in ba_batch.items()}
+            emb, logits = self(ab_batch, ba_batch)
+            if i == 0:
+                all_emb = emb
+                all_logits = logits
+            else:
+                all_emb = torch.cat([all_emb, emb], dim=0)
+                all_logits = torch.cat([all_logits, logits], dim=0)
 
-        encoded_ba = batch_tokenize(ba)
-        for k in encoded_ba:
-            encoded_ba[k] = encoded_ba[k].to(device)
-
-        emb, logits = self(encoded_ab, encoded_ba)
-
-        return emb, logits
+        return all_emb, all_logits
 
     def training_step(self, batch, batch_idx):
         input_ab = batch.get("input_ab")
@@ -416,7 +426,7 @@ def train_classifier(cfg, sent_cls):
         os.makedirs(ckp_path)
 
     checkpoint = pl.callbacks.ModelCheckpoint(
-        mode = "max",
+        mode="max",
         dirpath=ckp_path,
         filename=ckp_name,
         monitor="valid_acc_epoch",
