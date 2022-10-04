@@ -146,7 +146,7 @@ class SentenceClassifier(pl.LightningModule):
             batch = texts[i:i + batch_size]
             encoded = batch_tokenize(batch)
             encoded = {k: v.to(device) for k, v in encoded.items()}
-            emb, logits = self.bert(**encoded)
+            emb, logits = self(**encoded)
             if i == 0:
                 all_emb = emb
                 all_logits = logits
