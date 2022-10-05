@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch import optim
-from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 
 import pickle
 import hydra
@@ -27,7 +27,6 @@ class ScaleAttention(nn.Module):
 
         # TODO: is this correct to use mask label
         if mask is not None:
-            atten = atten * mask
             atten.masked_fill_(mask.bool(), 1e-9)
 
         # print("-"*10 + "debug" + "-"*10)
@@ -37,6 +36,7 @@ class ScaleAttention(nn.Module):
         # print("-"*10 + "debug" + "-"*10)
 
         atten = F.softmax(atten, dim=-1)
+        atten = atten * mask
         atten = self.dropout(atten)
         out = torch.matmul(atten, v)
 
@@ -145,29 +145,28 @@ class DocEncoder(nn.Module):
                                         nn.GELU(),
                                         nn.Linear(cfg.hidden_size // 2, cfg.num_classes),)
 
-        self.doc_cls_embedding = nn.Parameter(torch.randn(cfg.hidden_size * 2))
         self.doc_pad_embedding = nn.Parameter(torch.randn(cfg.hidden_size * 2))
 
     def forward(self, doc_seqs, doc_scores):
         doc_seqs, doc_scores = self._pad_to_longest(doc_seqs, doc_scores)
         doc_seqs = self.doc_encoder(doc_seqs, doc_scores)
-        cls_emb = doc_seqs[:, 0, ...]
+        doc_seqs = doc_seqs.transpose(1, 2)
+        cls_emb = torch.avg_pool1d(doc_seqs, kernel_size=doc_seqs.shape[-1]).squeeze(-1)
         logits = self.classifier(cls_emb)
         return doc_seqs, logits
 
     def _pad_cls_seqs(self, tensor, max_seq_len):
-        device = self.doc_cls_embedding.device
-        cls_emb = self.doc_cls_embedding.unsqueeze(0)
+        device = self.doc_pad_embedding.device
         pad_emb = self.doc_pad_embedding.unsqueeze(0)
-        padded_seq = [cls_emb]
+        padded_seq = []
         padded_seq.append(tensor.to(device))
         padded_seq.extend([pad_emb] * (max_seq_len - tensor.shape[0]))
         padded_seq = torch.cat(padded_seq, dim=0)
         return padded_seq
 
     def _pad_cls_socres(self, doc_score, max_seq_len):
-        device = self.doc_cls_embedding.device
-        scores = [torch.ones(1).to(device)]
+        device = self.doc_pad_embedding.device
+        scores = []
         scores.append(doc_score.to(device))
         scores.append(torch.zeros(max_seq_len - doc_score.shape[0]).to(device))
         padded_scores = torch.cat(scores, dim=0)
@@ -277,13 +276,18 @@ class DocModel(pl.LightningModule):
         logits_ab = []
         for sample in batch:
             emb_ab.append(torch.tensor(sample.get("emb_ab")))
-            logits_ab.append(torch.tensor(sample.get("logits_ab"))[:, 1])
+            
+            logits = torch.tensor(sample.get("logits_ab"))
+            logits = torch.softmax(logits, dim=-1)
+            logits = logits[:, 1]
+            logits_ab.append(logits)
+            
             label.append(sample.get("label"))
 
         return {"input": (emb_ab, logits_ab), "label": torch.tensor(label)}
 
 
-@hydra.main(config_path="./", config_name="config", version_base="1.1")
+@hydra.main(config_path="./", config_name="config", version_base="1.2")
 def train_doc_encoder(cfg):
     cfg = cfg.doc_encoder
 

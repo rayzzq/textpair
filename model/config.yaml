@@ -2,25 +2,24 @@ doc_encoder:
   seed: 42
   hidden_size: 768
   num_heads: 4
-  dropout: 0.3
+  dropout: 0.2
   activation: gelu
   num_layers: 4
   num_classes: 3
-  train_data_path: D:\NVIDIA\textpair\data\val_stage1.pkl
-  valid_data_path: D:\NVIDIA\textpair\data\val_stage1.pkl
-  output_dir: ./doc
+  train_data_path: /home/wanghao/zzq/textpair/data/train_stage1.pkl
+  valid_data_path: /home/wanghao/zzq/textpair/data/val_stage1.pkl
+  output_dir: /home/wanghao/zzq/textpair/model/doced
 
   train_args:
     lr: 1e-5
     gradient_clip_val: 0.5
-    devices: 1
+    devices: [1]
     weight_decay: 0.01
     batch_size: 4
-    max_epochs: 4
+    max_epochs: 100
     accelerator: gpu
     strategy: ddp
     save_steps: 1000
-
 
 task: single
 
