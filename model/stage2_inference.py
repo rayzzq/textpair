@@ -14,24 +14,31 @@ def infer_stage1_label(logits_ab, logits_a, logits_b):
         label = np.argmax(logits, axis=-1)
         label_idx = np.where(label == 1)[0].tolist()
         return label_idx
+    
+    def sigmoid(x):
+        e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+        print(e_x.shape)
+        return e_x / e_x.sum(axis=-1, keepdims=True)
+    
     label_a = ration_sent(logits_a)
     label_b = ration_sent(logits_b)
 
     len_a = logits_a.shape[0]
     len_b = logits_b.shape[0]
 
-    def idx_to_pair(idx):
-        row = idx // len_b
-        col = idx % len_b
-        if row not in label_a or col not in label_b:
-            return None
-        return [row, col]
 
-    paired_ab = np.argmax(logits_ab, axis=-1)
-    paired_ab = np.where(paired_ab == 1)[0].tolist()
-    paired_ab = [idx_to_pair(idx) for idx in paired_ab]
-    paired_ab = [pair for pair in paired_ab if pair is not None]
+    logits_ab = sigmoid(logits_ab)
+    logits_ab = logits_ab[:, 1]
+    logits_ab = logits_ab.reshape(len_a, len_b)
 
+    row_mask = logits_ab.max(axis=-1) > 0.5
+    
+    paired_ab = []
+    for i, is_paired in enumerate(row_mask):
+        if is_paired and i in label_a:
+            j = np.argmax(logits_ab[i,:], axis=-1)
+            paired_ab.append([i, j])
+            
     return {"Case_A_rationales": label_a, "Case_B_rationales": label_b, "relation": paired_ab}
 
 
