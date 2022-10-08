@@ -12,11 +12,11 @@ def sample_to_tensor(sample, single_model, paired_model):
     single_model.to(device)
     paired_model.to(device)
 
-    a = sample['Case_A']
-    b = sample['Case_B']
-    rel = sample["relation"]
-    rationa = sample["Case_A_rationales"]
-    rationb = sample["Case_B_rationales"]
+    a = sample.get('Case_A')
+    b = sample.get('Case_B')
+    rel = sample.get("relation", None)
+    rationa = sample.get("Case_A_rationales", None)
+    rationb = sample.get("Case_B_rationales", None)
 
     # get single sentence embeddings
     ra = []
@@ -85,7 +85,15 @@ if __name__ == "__main__":
     single_model = SentenceClassifier.load_from_checkpoint(single_ckp_path)
     paired_model = SentencePairClassifier.load_from_checkpoint(paired_ckp_paht)
 
-    for t in ("train", "val"):
-        file_path = f"{data_root_dir}/{t}.jsonl"
-        output_path = f"{data_root_dir}/{t}_stage1.jsonl"
+    # for t in ("train", "val"):
+    #     file_path = f"{data_root_dir}/{t}.jsonl"
+    #     output_path = f"{data_root_dir}/{t}_stage1.pkl"
+    #     stage1_inference(file_path, output_path, single_model, paired_model)
+    
+    sub_files_stage1 = r""
+    sub_files_stage2 = r""
+    
+    for file in (sub_files_stage1, sub_files_stage2):
+        file_path = f"{data_root_dir}/{file}"
+        output_path = f"{data_root_dir}/{file}.infer-stage1.pkl"
         stage1_inference(file_path, output_path, single_model, paired_model)
