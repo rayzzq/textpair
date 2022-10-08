@@ -5,12 +5,15 @@ import pickle
 import numpy as np
 import torch
 from tqdm import tqdm
+import os
 
 
 def sample_to_tensor(sample, single_model, paired_model):
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     single_model.to(device)
     paired_model.to(device)
+    single_model.eval()
+    paired_model.eval()
 
     a = sample.get('Case_A')
     b = sample.get('Case_B')
@@ -21,10 +24,11 @@ def sample_to_tensor(sample, single_model, paired_model):
     # get single sentence embeddings
     ra = []
     rb = []
-    for i in range(len(a)):
-        ra.append(int(i in rationa))
-    for j in range(len(b)):
-        rb.append(int(j in rationb))
+    if not (rationa is None or rationb is None):
+        for i in range(len(a)):
+            ra.append(int(i in rationa))
+        for j in range(len(b)):
+            rb.append(int(j in rationb))
 
     a_embedding, a_logits = single_model.encode(a, device=device, batch_size=128)
     b_embedding, b_logits = single_model.encode(b, device=device, batch_size=128)
@@ -40,7 +44,8 @@ def sample_to_tensor(sample, single_model, paired_model):
     for ia, senta in enumerate(a):
         for ib, sentb in enumerate(b):
             paired_sents.append([senta, sentb])
-            rel_trues.append(int((ia, ib) in rel))
+            if rel is not None:
+                rel_trues.append(int((ia, ib) in rel))
 
     paired_embedding, paired_logits = paired_model.encode(paired_sents, device=device, batch_size=64)
     paired_embedding = paired_embedding.cpu().detach().numpy()
@@ -64,11 +69,15 @@ def sample_to_tensor(sample, single_model, paired_model):
 
 
 def stage1_inference(file_path, output_path, single_model, paired_model):
+
+    output_dir = os.path.dirname(output_path)
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
     with jsonlines.open(file_path, "r") as reader:
         data = list(reader)
-
     res = []
-    for sample in tqdm(data):
+    for idx, sample in enumerate(tqdm(data)):
         res.append(sample_to_tensor(sample, single_model, paired_model))
 
     print("inference done, dumping to {}".format(output_path))
@@ -78,22 +87,23 @@ def stage1_inference(file_path, output_path, single_model, paired_model):
 
 
 if __name__ == "__main__":
-    single_ckp_path = "/home/wanghao/zzq/textpair/model/single/2022-10-04-11-54/simcse-chinese-roberta-wwm-ext-step=4562-valid_acc_epoch=0.7661.ckpt"
-    paired_ckp_paht = "/home/wanghao/zzq/textpair/model/paired/2022-10-04-11-50/simcse-chinese-roberta-wwm-ext-step=2828-valid_acc_epoch=0.8516.ckpt"
-    data_root_dir = "/home/wanghao/zzq/textpair/data"
+    single_ckp_path = "/home/wanghao/zzq/textpair/model/single/2022-10-04-13-02/simcse-chinese-roberta-wwm-ext-step=2281-valid_acc_epoch=0.8539.ckpt"
+    paired_ckp_paht = "/home/wanghao/zzq/textpair/model/paired/2022-10-04-13-03/simcse-chinese-roberta-wwm-ext-step=1414-valid_acc_epoch=0.8933.ckpt"
 
     single_model = SentenceClassifier.load_from_checkpoint(single_ckp_path)
     paired_model = SentencePairClassifier.load_from_checkpoint(paired_ckp_paht)
 
+    # data_root_dir = "/home/wanghao/zzq/textpair/data"
     # for t in ("train", "val"):
     #     file_path = f"{data_root_dir}/{t}.jsonl"
     #     output_path = f"{data_root_dir}/{t}_stage1.pkl"
     #     stage1_inference(file_path, output_path, single_model, paired_model)
-    
-    sub_files_stage1 = r""
-    sub_files_stage2 = r""
-    
+
+    data_root_dir = "/home/wanghao/zzq/textpair/data"
+    sub_files_stage1 = r"competition_stage_1_test.json"
+    sub_files_stage2 = r"competition_stage_2_test.json"
+
     for file in (sub_files_stage1, sub_files_stage2):
-        file_path = f"{data_root_dir}/{file}"
-        output_path = f"{data_root_dir}/{file}.infer-stage1.pkl"
+        file_path = f"{data_root_dir}/raw/{file}"
+        output_path = f"{data_root_dir}/submission/{file}.infer-stage1.pkl"
         stage1_inference(file_path, output_path, single_model, paired_model)
