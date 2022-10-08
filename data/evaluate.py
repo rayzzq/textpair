@@ -4,6 +4,8 @@ import sys
 from sklearn.metrics import f1_score
 import os
 e_min = 0.0000001
+
+
 def rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational, pre_relation, relations):
     right_a = 0
     for i in selected_id_a:
@@ -14,8 +16,8 @@ def rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational
         P_a = 0
     else:
         P_a = right_a/len(selected_id_a)
-    
-    if len(Case_a_rational)==0:
+
+    if len(Case_a_rational) == 0:
         R_a = 0
     else:
         R_a = right_a/len(Case_a_rational)
@@ -34,8 +36,8 @@ def rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational
         P_b = 0
     else:
         P_b = right_b/len(selected_id_b)
-    
-    if len(Case_b_rational)==0:
+
+    if len(Case_b_rational) == 0:
         R_b = 0
     else:
         R_b = right_b/len(Case_b_rational)
@@ -62,16 +64,17 @@ def rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational
         F_c = 0
     else:
         F_c = 2 * P_c * R_c / (P_c + R_c)
-        
+
     # TODO the host of the event do not use this metric
     # if len(relations) == 0 and len(pre_relation) == 0:
     #     F_c = 1
-    
-    return (F_a + F_b + F_c)/3
+
+    return (F_a + F_b + F_c)/3, F_a, F_b, F_c
+
 
 if __name__ == '__main__':
     summit_file = sys.argv[1]
-    gold_file = os.path.join("./val_ground_truth.txt") # competition_stage_2_test_truth.txt competition_stage_3_test_truth.txt
+    gold_file = os.path.join("./val_ground_truth.txt")  # competition_stage_2_test_truth.txt competition_stage_3_test_truth.txt
 
     gold_data = pd.read_csv(gold_file, sep='\t')
     pred_data = pd.read_csv(summit_file, sep='\t')
@@ -79,31 +82,31 @@ if __name__ == '__main__':
     pred_labels = []
     truth_labels = []
     relations_list = []
+
+    Fa = []
+    Fb = []
+    Fc = []
+
     for i in range(len(gold_data)):
         id = gold_data.loc[i]['id']
         Case_a_rational = eval(gold_data.loc[i]['Case_A_rationales'])
         Case_b_rational = eval(gold_data.loc[i]['Case_B_rationales'])
         relations = eval(gold_data.loc[i]['relation'])
         truth_labels.append(gold_data.loc[i]['label'])
-        
+
         selected_id_a = eval(pred_data.loc[id]['Case_A_rationales'])
         selected_id_b = eval(pred_data.loc[id]['Case_B_rationales'])
         pre_relation = eval(pred_data.loc[id]['relation'])
         pred_labels.append(pred_data.loc[id]['label'])
         relations_score = rationale_acc(selected_id_a, Case_a_rational, selected_id_b, Case_b_rational, pre_relation, relations)
-        relations_list.append(relations_score)
+        relations_list.append(relations_score[0])
+        Fa.append(relations_score[1])
+        Fb.append(relations_score[2])
+        Fc.append(relations_score[3])
+
     f1_macro = f1_score(truth_labels, pred_labels, average='macro')
-    print(0.5*f1_macro+0.5*(sum(relations_list)/len(relations_list)))
-
-
-
-
-
-
-
-
-
-
-
-
-
+    print("Final score:", 0.5*f1_macro+0.5*(sum(relations_list)/len(relations_list)))
+    print("CaseA rationals:", sum(Fa)/len(Fa))
+    print("CaseB rationals:", sum(Fb)/len(Fb))
+    print("AB rationals pair:", sum(Fc)/len(Fc))
+    print("Doc label F1:", f1_macro)

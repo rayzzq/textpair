@@ -110,8 +110,8 @@ def stage2_inference(file_path, output_path, model):
 
 if __name__ == "__main__":
     model_path = r"/home/wanghao/zzq/textpair/model/doced/2022-10-05-14-04/doc-step=40950-valid_acc_epoch=0.6133.ckpt"
-    sub_file = r"/home/wanghao/zzq/textpair/data/stage1_backup/val_stage1.pkl"
+    sub_file = r"/home/wanghao/zzq/textpair/data/val_stage1.pkl"
 
     model = DocModel.load_from_checkpoint(model_path)
-    output_path = sub_file.split(".")[0] + "_final_resutls.csv"
+    output_path = sub_file.split(".")[0] + ".final_resutls.csv"
     stage2_inference(sub_file, output_path, model)

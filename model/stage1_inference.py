@@ -93,17 +93,17 @@ if __name__ == "__main__":
     single_model = SentenceClassifier.load_from_checkpoint(single_ckp_path)
     paired_model = SentencePairClassifier.load_from_checkpoint(paired_ckp_paht)
 
-    # data_root_dir = "/home/wanghao/zzq/textpair/data"
-    # for t in ("train", "val"):
-    #     file_path = f"{data_root_dir}/{t}.jsonl"
-    #     output_path = f"{data_root_dir}/{t}_stage1.pkl"
-    #     stage1_inference(file_path, output_path, single_model, paired_model)
-
     data_root_dir = "/home/wanghao/zzq/textpair/data"
-    sub_files_stage1 = r"competition_stage_1_test.json"
-    sub_files_stage2 = r"competition_stage_2_test.json"
-
-    for file in (sub_files_stage1, sub_files_stage2):
-        file_path = f"{data_root_dir}/raw/{file}"
-        output_path = f"{data_root_dir}/submission/{file}.infer-stage1.pkl"
+    for t in ("train", "val"):
+        file_path = f"{data_root_dir}/{t}.jsonl"
+        output_path = f"{data_root_dir}/{t}_stage1.pkl"
         stage1_inference(file_path, output_path, single_model, paired_model)
+
+    # data_root_dir = "/home/wanghao/zzq/textpair/data"
+    # sub_files_stage1 = r"competition_stage_1_test.json"
+    # sub_files_stage2 = r"competition_stage_2_test.json"
+
+    # for file in (sub_files_stage1, sub_files_stage2):
+    #     file_path = f"{data_root_dir}/raw/{file}"
+    #     output_path = f"{data_root_dir}/submission/{file}.infer-stage1.pkl"
+    #     stage1_inference(file_path, output_path, single_model, paired_model)
