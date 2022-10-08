@@ -72,7 +72,8 @@ def sample_to_tensor(sample, model):
 
     doc_seqs, doc_logits = model(emb_ab, logits)
     doc_label = torch.argmax(doc_logits, dim=-1)[0].tolist()
-    res["doc_label"] = doc_label
+    res["label"] = doc_label
+    res["id"] = sample["id"]
 
     return res
 
