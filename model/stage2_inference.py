@@ -1,12 +1,11 @@
-import jsonlines
-from doc_encoder import DocModel, Collate
-from torch.utils.data import Dataset
+from doc_encoder import DocModel
 import pickle
 import numpy as np
 import torch
 from tqdm import tqdm
 import os
 import pandas as pd
+from collections import defaultdict
 
 
 def infer_stage1_label(logits_ab, logits_a, logits_b):
@@ -14,31 +13,45 @@ def infer_stage1_label(logits_ab, logits_a, logits_b):
         label = np.argmax(logits, axis=-1)
         label_idx = np.where(label == 1)[0].tolist()
         return label_idx
-    
+
     def sigmoid(x):
         e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
-        print(e_x.shape)
         return e_x / e_x.sum(axis=-1, keepdims=True)
-    
+
     label_a = ration_sent(logits_a)
     label_b = ration_sent(logits_b)
 
     len_a = logits_a.shape[0]
     len_b = logits_b.shape[0]
 
-
     logits_ab = sigmoid(logits_ab)
     logits_ab = logits_ab[:, 1]
     logits_ab = logits_ab.reshape(len_a, len_b)
 
     row_mask = logits_ab.max(axis=-1) > 0.5
-    
-    paired_ab = []
+    tmp_ab = []
     for i, is_paired in enumerate(row_mask):
         if is_paired and i in label_a:
-            j = np.argmax(logits_ab[i,:], axis=-1)
-            paired_ab.append([i, j])
-            
+            j = np.argmax(logits_ab[i, :], axis=-1)
+            tmp_ab.append([i, j])
+
+    tmp_dict = defaultdict(list)
+    for i, j in tmp_ab:
+        tmp_dict[j].append(i)
+
+    paired_ab = []
+
+    for j, v in tmp_dict.items():
+        if len(v) > 1:
+            max_socre = 0
+            for i in v:
+                if logits_ab[i, j] > max_socre:
+                    max_socre = logits_ab[i, j]
+                    max_i = i
+            paired_ab.append([max_i, j])
+        else:
+            paired_ab.append([v[0], j])
+
     return {"Case_A_rationales": label_a, "Case_B_rationales": label_b, "relation": paired_ab}
 
 
@@ -96,11 +109,9 @@ def stage2_inference(file_path, output_path, model):
 
 
 if __name__ == "__main__":
-    model_path = r""
-    sub_files_stage1 = r""
-    sub_files_stage2 = r""
+    model_path = r"/home/wanghao/zzq/textpair/model/doced/2022-10-05-14-04/doc-step=40950-valid_acc_epoch=0.6133.ckpt"
+    sub_file = r"/home/wanghao/zzq/textpair/data/stage1_backup/val_stage1.pkl"
 
     model = DocModel.load_from_checkpoint(model_path)
-    for file in (sub_files_stage1, sub_files_stage2):
-        output_path = file.split(".")[0] + "_final_resutls.csv"
-        stage2_inference(file, output_path, model)
+    output_path = sub_file.split(".")[0] + "_final_resutls.csv"
+    stage2_inference(sub_file, output_path, model)
