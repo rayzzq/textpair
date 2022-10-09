@@ -62,10 +62,12 @@ class DataReader(object):
         data = self.data
         res = []
         for sample in data:
-            res.extend(self._get_paired_samples(sample["Case_A"], sample["Case_B"], sample["relation"]))
+            res.extend(self._get_paired_samples(sample["Case_A"], sample["Case_A_rationales"],
+                                                sample["Case_B"], sample["Case_B_rationales"],
+                                                sample["relation"]))
         return res
 
-    def _get_paired_samples(self, ca, cb, rel):
+    def _get_paired_samples(self, ca, ra, cb, rb, rel):
         rel = list(map(tuple, rel))
         pos = []
         # for r in rel:
@@ -78,13 +80,13 @@ class DataReader(object):
         #     ib = random.randint(0, len(cb) - 1)
         #     if (ia, ib) not in rel:
         #         neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
-        for ia in range(len(ca)):
-            for ib in range(len(cb)):
-                if (ia, ib) not in rel:
-                    neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
+        for ia in ra:
+            for ib in rb:
+                if (ia, ib) in rel:
+                    neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 1})
                 else:
-                    pos.append({'texta': ca[ia], 'textb': cb[ib], 'label': 1})
-        res = pos + neg 
+                    pos.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
+        res = pos + neg
         random.shuffle(res)
         return res
 
@@ -449,6 +451,7 @@ def train_classifier(cfg, sent_cls):
         devices=train_args.devices,
         gradient_clip_val=train_args.gradient_clip_val,
         val_check_interval=train_args.val_check_interval,
+        strategy=train_args.strategy,
         callbacks=[checkpoint],
         logger=logger
     )

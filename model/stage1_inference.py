@@ -9,7 +9,7 @@ import os
 
 
 def sample_to_tensor(sample, single_model, paired_model):
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     single_model.to(device)
     paired_model.to(device)
     single_model.eval()
@@ -87,14 +87,15 @@ def stage1_inference(file_path, output_path, single_model, paired_model):
 
 
 if __name__ == "__main__":
-    single_ckp_path = "/home/wanghao/zzq/textpair/model/single/2022-10-04-13-02/simcse-chinese-roberta-wwm-ext-step=2281-valid_acc_epoch=0.8539.ckpt"
-    paired_ckp_paht = "/home/wanghao/zzq/textpair/model/paired/2022-10-04-13-03/simcse-chinese-roberta-wwm-ext-step=1414-valid_acc_epoch=0.8933.ckpt"
+    single_ckp_path = "/home/wanghao/zzq/textpair/model/single/2022-10-09-12-36/simcse-chinese-roberta-wwm-ext-step=10000-valid_acc_epoch=0.8578.ckpt"
+    paired_ckp_paht = "/home/wanghao/zzq/textpair/model/paired/2022-10-09-12-31/simcse-chinese-roberta-wwm-ext-step=5500-valid_acc_epoch=0.9935.ckpt"
 
     single_model = SentenceClassifier.load_from_checkpoint(single_ckp_path)
     paired_model = SentencePairClassifier.load_from_checkpoint(paired_ckp_paht)
 
     data_root_dir = "/home/wanghao/zzq/textpair/data"
-    for t in ("train", "val"):
+    # for t in ("train", "val"):
+    for t in ("val",):
         file_path = f"{data_root_dir}/{t}.jsonl"
         output_path = f"{data_root_dir}/{t}_stage1.pkl"
         stage1_inference(file_path, output_path, single_model, paired_model)

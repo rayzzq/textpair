@@ -24,33 +24,37 @@ def infer_stage1_label(logits_ab, logits_a, logits_b):
     len_a = logits_a.shape[0]
     len_b = logits_b.shape[0]
 
-    logits_ab = sigmoid(logits_ab)
-    logits_ab = logits_ab[:, 1]
-    logits_ab = logits_ab.reshape(len_a, len_b)
+    logits_ab = np.argmax(logits_ab, axis=-1)
+    idxs = np.where(logits_ab == 1)[0].tolist()
+    paired_ab = [[idx // len_b, idx % len_b] for idx in idxs]
+    
+    # logits_ab = sigmoid(logits_ab)
+    # logits_ab = logits_ab[:, 1]
+    # logits_ab = logits_ab.reshape(len_a, len_b)
 
-    row_mask = logits_ab.max(axis=-1) > 0.5
-    tmp_ab = []
-    for i, is_paired in enumerate(row_mask):
-        if is_paired and i in label_a:
-            j = np.argmax(logits_ab[i, :], axis=-1)
-            tmp_ab.append([i, j])
+    # row_mask = logits_ab.max(axis=-1) > 0.5
+    # tmp_ab = []
+    # for i, is_paired in enumerate(row_mask):
+    #     if is_paired and i in label_a:
+    #         j = np.argmax(logits_ab[i, :], axis=-1)
+    #         tmp_ab.append([i, j])
 
-    tmp_dict = defaultdict(list)
-    for i, j in tmp_ab:
-        tmp_dict[j].append(i)
+    # tmp_dict = defaultdict(list)
+    # for i, j in tmp_ab:
+    #     tmp_dict[j].append(i)
 
-    paired_ab = []
+    # paired_ab = []
 
-    for j, v in tmp_dict.items():
-        if len(v) > 1:
-            max_socre = 0
-            for i in v:
-                if logits_ab[i, j] > max_socre:
-                    max_socre = logits_ab[i, j]
-                    max_i = i
-            paired_ab.append([max_i, j])
-        else:
-            paired_ab.append([v[0], j])
+    # for j, v in tmp_dict.items():
+    #     if len(v) > 1:
+    #         max_socre = 0
+    #         for i in v:
+    #             if logits_ab[i, j] > max_socre:
+    #                 max_socre = logits_ab[i, j]
+    #                 max_i = i
+    #         paired_ab.append([max_i, j])
+    #     else:
+    #         paired_ab.append([v[0], j])
 
     return {"Case_A_rationales": label_a, "Case_B_rationales": label_b, "relation": paired_ab}
 

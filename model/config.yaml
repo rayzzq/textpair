@@ -6,16 +6,16 @@ doc_encoder:
   activation: gelu
   num_layers: 4
   num_classes: 3
-  train_data_path: /home/wanghao/zzq/textpair/data/train_stage1.pkl
-  valid_data_path: /home/wanghao/zzq/textpair/data/val_stage1.pkl
-  output_dir: /home/wanghao/zzq/textpair/model/doced
+  train_data_path: D:\NVIDIA\textpair\data\val_stage1.pkl
+  valid_data_path: D:\NVIDIA\textpair\data\val_stage1.pkl
+  output_dir: D:\NVIDIA\textpair\model\doced
 
   train_args:
     lr: 1e-5
     gradient_clip_val: 0.5
-    devices: [1]
+    devices: [0]
     weight_decay: 0.01
-    batch_size: 4
+    batch_size: 1
     max_epochs: 100
     accelerator: gpu
     strategy: ddp
@@ -61,4 +61,4 @@ sentence_pair_classifier:
     accelerator: gpu
     strategy: ddp
     val_check_interval: 0.5
-    save_steps: 1000
+    every_n_train_steps: 2000
