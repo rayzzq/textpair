@@ -49,7 +49,7 @@ class DataReader(object):
             select_pos_sent(sample["Case_A"], sample["Case_A_rationales"])
             select_pos_sent(sample["Case_B"], sample["Case_B_rationales"])
         random.shuffle(neg_sents)
-        neg_sents = neg_sents[:int(len(pos_sents) * 1.2)]
+        # neg_sents = neg_sents[:int(len(pos_sents) * 1.2)]
 
         res = []
         for pos in pos_sents:
@@ -68,17 +68,25 @@ class DataReader(object):
     def _get_paired_samples(self, ca, cb, rel):
         rel = list(map(tuple, rel))
         pos = []
-        for r in rel:
-            ia, ib = r
-            pos.append({'texta': ca[ia], 'textb': cb[ib], 'label': 1})
+        # for r in rel:
+        #     ia, ib = r
+        #     pos.append({'texta': ca[ia], 'textb': cb[ib], 'label': 1})
 
         neg = []
-        while len(neg) < int(1.5 * len(pos)):
-            ia = random.randint(0, len(ca) - 1)
-            ib = random.randint(0, len(cb) - 1)
-            if (ia, ib) not in rel:
-                neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
-        return pos + neg
+        # while len(neg) < int(1.5 * len(pos)):
+        #     ia = random.randint(0, len(ca) - 1)
+        #     ib = random.randint(0, len(cb) - 1)
+        #     if (ia, ib) not in rel:
+        #         neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
+        for ia in range(len(ca)):
+            for ib in range(len(cb)):
+                if (ia, ib) not in rel:
+                    neg.append({'texta': ca[ia], 'textb': cb[ib], 'label': 0})
+                else:
+                    pos.append({'texta': ca[ia], 'textb': cb[ib], 'label': 1})
+        res = pos + neg 
+        random.shuffle(res)
+        return res
 
 
 class SingleDataset(torch.utils.data.Dataset):
@@ -430,6 +438,7 @@ def train_classifier(cfg, sent_cls):
         dirpath=ckp_path,
         filename=ckp_name,
         monitor="valid_acc_epoch",
+        every_n_train_steps=train_args.every_n_train_steps,
     )
 
     logger = TensorBoardLogger(output_dir)
@@ -439,6 +448,7 @@ def train_classifier(cfg, sent_cls):
         max_epochs=train_args.max_epochs,
         devices=train_args.devices,
         gradient_clip_val=train_args.gradient_clip_val,
+        val_check_interval=train_args.val_check_interval,
         callbacks=[checkpoint],
         logger=logger
     )
