@@ -156,12 +156,12 @@ class SentenceClassifier(pl.LightningModule):
 
         return all_emb, all_logits
 
+
     def forward(self, *args, **kwargs):
-        ouput = self.bert(**kwargs)
-        last = ouput.last_hidden_state.transpose(1, 2)  # [batch, 768, seqlen]
-        emb = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-        logits = self.classifier(emb)
-        return emb, logits
+        outputs = self.bert(**kwargs)
+        cls_emb = outputs.last_hidden_state[:, 0, :]
+        logits = self.classifier(cls_emb)
+        return cls_emb, logits
 
     def training_step(self, batch, batch_idx):
         input = batch.get("input")
@@ -261,12 +261,12 @@ class SentencePairClassifier(pl.LightningModule):
         self.valid_acc = torchmetrics.Accuracy()
 
     def forward(self, input_ab, input_ba):
-        out1 = self.bert(**input_ab).last_hidden_state.transpose(1, 2)
-        out2 = self.bert(**input_ba).last_hidden_state.transpose(1, 2)
+        out1 = self.bert(**input_ab).last_hidden_state
+        out2 = self.bert(**input_ba).last_hidden_state
         # print(out1.shape, out2.shape)
 
-        emb1 = torch.avg_pool1d(out1, kernel_size=out1.shape[-1]).squeeze(-1)  # [batch, 768]
-        emb2 = torch.avg_pool1d(out2, kernel_size=out1.shape[-1]).squeeze(-1)  # [batch, 768]
+        emb1 = out1[:, 0, :]
+        emb2 = out2[:, 0, :]
         # print(emb1.shape, emb2.shape)
 
         emb = torch.cat([emb1, emb2], dim=-1)
